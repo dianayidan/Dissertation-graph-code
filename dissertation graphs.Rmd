@@ -1,0 +1,1271 @@
+---
+title: "mercury leaf analysis"
+author: "Yidan Zhang"
+date: "2025-08-10"
+output: html_document
+---
+
+# Collection date (2024-2025 growing season) -leaf part : 3.1.1.1used 0826
+
+```{r}
+
+library(tidyverse)
+library(lubridate)
+library(scales)
+
+df_raw <- read.csv("Gb_seasonality.csv", stringsAsFactors = FALSE)
+
+df <- df_raw %>%
+  mutate(
+    # CSV 的 Month 为 dd/mm/yyyy
+    Month      = dmy(Month),
+    # 仅保留“月-日”，忽略年份；
+    md         = format(Month, "%m-%d"),
+    Month_ref  = as.Date(paste0("2001-", md)),
+    Tree       = factor(Tree, levels = c("North","South")),
+    leaf_parts = factor(leaf_parts, levels = c("P1","P2","P3")),
+    `Leaf Orientation` = factor(Leaf_Orientation, levels = c("North","South")),
+    Average_Hg = as.numeric(Average_Hg)
+  ) %>%
+  filter(!is.na(Month_ref), !is.na(Tree), !is.na(leaf_parts), !is.na(Average_Hg))
+
+# ----- 2) Aggregate across Leaf Orientation: mean & sd -----
+sum_day <- df %>%
+  group_by(Tree, leaf_parts, Month_ref) %>%
+  summarise(
+    n    = n(),
+    mean = mean(Average_Hg, na.rm = TRUE),
+    sd   = sd(Average_Hg,   na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    sd   = ifelse(is.na(sd), 0, sd),  
+    ymin = pmax(mean - sd, 0),
+    ymax = mean + sd
+  ) %>%
+  arrange(Month_ref)
+
+# presenting date
+x_breaks <- sum_day %>%
+  distinct(Month_ref) %>%
+  arrange(Month_ref) %>%
+  pull(Month_ref)
+
+cols <- c("P1" = "#E76F51", "P2" = "#2A9D8F", "P3" = "#277DA1")
+
+theme_paper <- theme_minimal(base_size = 13) +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(face = "bold"),
+    axis.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(linewidth = 0.25),
+    panel.background  = element_rect(fill = "#FAFAFA", colour = NA),
+    strip.background  = element_rect(fill = "#EFEFEF", colour = NA),
+    strip.text = element_text(face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1) 
+  )
+
+x_scale <- scale_x_date(
+  breaks = x_breaks,             # 只显示 CSV 实际的周采样日期
+  date_labels = "%m-%d",         # 不显示年份
+  limits = range(x_breaks),
+  expand = expansion(mult = c(0.01, 0.03))
+)
+
+# North vs South -----
+p_facet <- ggplot(sum_day, aes(Month_ref, mean, colour = leaf_parts, fill = leaf_parts)) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.18, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.8, stroke = 0.2) +
+  facet_grid(Tree ~ ., scales = "free_y") +
+  x_scale +
+  scale_colour_manual(values = cols, name = "Leaf Part") +
+  scale_fill_manual(values = cols,   name = "Leaf Part") +
+  labs(
+    title = "Foliar Mercury concentration",
+    x = "Collection date (2024-2025 growing season)",
+    y = "Hg concentration (ppb)"
+  ) +
+  theme_paper
+
+# ----- 4B) North -----
+df_north <- sum_day %>% filter(Tree == "North")
+p_north <- ggplot(df_north, aes(Month_ref, mean, colour = leaf_parts, fill = leaf_parts)) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.18, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.8, stroke = 0.2) +
+  x_scale +
+  scale_colour_manual(values = cols, name = "Leaf Part") +
+  scale_fill_manual(values = cols,   name = "Leaf Part") +
+  labs(
+    title = "Foliar Mercury concentration (North tree)",
+    x = "Collection date (2024-2025 growing season)",
+    y = "Hg concentration (ppb)"
+  ) +
+  theme_paper
+
+# ----- 4C) South -----
+df_south <- sum_day %>% filter(Tree == "South")
+p_south <- ggplot(df_south, aes(Month_ref, mean, colour = leaf_parts, fill = leaf_parts)) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.18, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.8, stroke = 0.2) +
+  x_scale +
+  scale_colour_manual(values = cols, name = "Leaf Part") +
+  scale_fill_manual(values = cols,   name = "Leaf Part") +
+  labs(
+    title = " Foliar Mercury concentration (South Tree) ",
+    x = "Collection date (2024-2025 growing season)",
+    y = "Hg concentration (ppb)"
+  ) +
+  theme_paper
+
+print(p_facet)
+print(p_north)
+print(p_south)
+
+# ----- 6) Save (可选) -----
+# ggsave("Hg_mean_sd_facet_monthonly.png", p_facet, width = 11, height = 7, dpi = 300)
+# ggsave("Hg_mean_sd_north_monthonly.png", p_north, width = 8, height = 5.5, dpi = 300)
+# ggsave("Hg_mean_sd_south_monthonly.png", p_south, width = 8, height = 5.5, dpi = 300)
+
+```
+
+
+
+#3.1.1.2 hg ratio 0826
+```{r}
+
+library(tidyverse)
+library(lubridate)
+
+df <- read.csv("Gb_seasonality.csv", stringsAsFactors = FALSE)
+df$Month       <- as.Date(df$Month, format = "%d/%m/%Y")
+df$Month_only  <- format(df$Month, "%m-%d")
+df$Month_date  <- as.Date(paste0("2024-", df$Month_only), format = "%Y-%m-%d")
+
+df <- df %>%
+  filter(Month_date >= as.Date("2024-04-01"),
+         Month_date <= as.Date("2024-11-30"))
+
+df <- df %>%
+  mutate(
+    leaf_parts       = toupper(trimws(leaf_parts)),
+    Tree             = factor(Tree, levels = c("North","South")),
+    Leaf_Orientation = factor(Leaf_Orientation, levels = c("North","South"))
+  )
+
+# 保证同一天×同树×同朝向下 P1/P2/P3 配对 ====
+wide <- df %>%
+  filter(leaf_parts %in% c("P1","P2","P3")) %>%
+  group_by(Month_date, Tree, Leaf_Orientation, leaf_parts) %>%
+  summarise(Hg = mean(Average_Hg, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = leaf_parts, values_from = Hg) %>%
+  drop_na(P1, P2, P3)
+
+ratio_long <- wide %>%
+  transmute(
+    Month_date, Tree, Leaf_Orientation,
+    `P1/P2` = P1 / P2,
+    `P1/P3` = P1 / P3,
+    `P2/P3` = P2 / P3
+  ) %>%
+  pivot_longer(cols = c(`P1/P2`,`P1/P3`,`P2/P3`),
+               names_to = "type", values_to = "ratio")
+
+ratio_long <- ratio_long %>% filter(type %in% c("P1/P2","P2/P3"))
+
+ratio_sum <- ratio_long %>%
+  group_by(Month_date, Tree, type) %>%
+  summarise(
+    n    = n(),
+    mean = mean(ratio, na.rm = TRUE),
+    sd   = sd(ratio,   na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    sd   = ifelse(is.na(sd), 0, sd),  
+    ymin = pmax(mean - sd, 0),        
+    ymax = mean + sd,
+    type = factor(type, levels = c("P1/P2","P2/P3","P1/P3"))
+  )
+
+# CSV 实际出现过的“周”日期（忽略年份，仅按月-日顺序）====  
+x_breaks <- ratio_sum %>%
+  distinct(Month_date) %>%
+  arrange(Month_date) %>%
+  pull(Month_date)
+cols <- c("P1/P2" = "#E76F51", "P2/P3" = "#277DA1", "P1/P3" = "#2A9D8F")
+
+theme_paper <- theme_minimal(base_size = 13) +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(face = "bold"),
+    axis.title  = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(linewidth = 0.25),
+    panel.background  = element_rect(fill = "#FAFAFA", colour = NA),
+    strip.background  = element_rect(fill = "#EFEFEF", colour = NA),
+    strip.text = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# 绘图：North / South 分面 + 均值折线 + SD 阴影 
+p <- ggplot(ratio_sum, aes(x = Month_date, y = mean, colour = type, fill = type)) +
+  geom_hline(yintercept = 1, linetype = 2, linewidth = 0.6, alpha = 0.6) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.16, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.6) +
+  facet_grid(Tree ~ ., scales = "fixed") +   # 若需要各自独立纵轴，改为 "free_y"
+  scale_colour_manual(values = cols, name = "Hg Ratio") +
+  scale_fill_manual(values = cols,   name = "Hg Ratio") +
+  scale_x_date(
+    breaks = x_breaks,               # ★ 用 CSV 实际周日期做刻度
+    date_labels = "%m-%d",           # ★ 只显示“月-日”（忽略年份）
+    limits = range(x_breaks),
+    expand = expansion(mult = c(0.01, 0.03))
+  ) +
+  labs(
+    title = "Seasonal Dynamics of Leaf Hg Ratios (North vs South Trees)",
+    x = "Collection date (2024-2025 growing season) ",
+    y = "Within different leaf parts Hg Ratio "
+  ) +
+  theme_paper
+
+print(p)
+
+ggsave("Hg_ratio_North_vs_South.png", p, width = 10.5, height = 6, dpi = 300)
+
+# x_breaks2 <- x_breaks[seq(1, length(x_breaks), by = 2)]
+# p + scale_x_date(breaks = x_breaks2, date_labels = "%m-%d",
+#                  limits = range(x_breaks), expand = expansion(mult = c(0.01, 0.03)))
+
+```
+
+
+# 0826 leaf orientation
+```{r}
+library(tidyverse)
+library(lubridate)
+
+df <- read.csv("Gb_seasonality.csv", stringsAsFactors = FALSE)
+
+df$Month      <- as.Date(df$Month, format = "%d/%m/%Y")     # CSV: dd/mm/yyyy
+df$Month_only <- format(df$Month, "%m-%d")                  # 只取月-日
+df$Month_date <- as.Date(paste0("2024-", df$Month_only))    # 映射到同一年以“只按月份排序”
+
+df <- df %>%
+  filter(Month_date >= as.Date("2024-04-01"),
+         Month_date <= as.Date("2024-11-30"))
+
+col_ori  <- names(df)[grepl("leaf[_ ]?orientation", names(df), ignore.case = TRUE)][1]
+col_tree <- names(df)[grepl("^tree$",               names(df), ignore.case = TRUE)][1]
+
+df <- df %>%
+  mutate(
+    !!col_tree := factor(.data[[col_tree]], levels = c("North","South")),
+    !!col_ori  := factor(.data[[col_ori]],  levels = c("North","South")),
+    leaf_parts = toupper(trimws(leaf_parts))
+  )
+
+agg_df <- df %>%
+  filter(leaf_parts %in% c("P1","P2","P3")) %>%
+  group_by(Month_date, .data[[col_tree]], .data[[col_ori]]) %>%
+  summarise(
+    n    = n(),
+    mean = mean(Average_Hg, na.rm = TRUE),
+    sd   = sd(Average_Hg,   na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  rename(Tree = !!col_tree, Leaf_Orientation = !!col_ori) %>%
+  mutate(
+    sd   = replace_na(sd, 0),        # 单样本 sd=NA 时置 0，保证 ribbon 可绘制
+    ymin = pmax(mean - sd, 0),
+    ymax = mean + sd
+  ) %>%
+  arrange(Month_date)
+
+x_breaks <- agg_df %>%
+  distinct(Month_date) %>%
+  arrange(Month_date) %>%
+  pull(Month_date)
+
+cols_orient <- c("North" = "#E76F51", "South" = "#277DA1")
+
+theme_paper <- theme_minimal(base_size = 13) +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(face = "bold"),
+    axis.title  = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(linewidth = 0.25),
+    panel.background  = element_rect(fill = "#FAFAFA", colour = NA),
+    strip.background  = element_rect(fill = "#EFEFEF", colour = NA),
+    strip.text = element_text(face = "bold"),
+    legend.position = "right",
+    legend.title    = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+p_facet <- ggplot(agg_df, aes(Month_date, mean, colour = Leaf_Orientation, fill = Leaf_Orientation)) +
+  geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.18, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.8, stroke = 0.2) +
+  facet_wrap(~ Tree, ncol = 1, scales = "fixed") +
+  scale_colour_manual(values = cols_orient, name = "Leaf Orientation") +
+  scale_fill_manual(values    = cols_orient, name = "Leaf Orientation") +
+  scale_x_date(
+    breaks = x_breaks,              # ★ 仅显示 CSV 周采样日
+    date_labels = "%m-%d",          # ★ 只显示“月-日”，不看年份
+    limits = range(x_breaks),
+    expand = expansion(mult = c(0.01, 0.03))
+  ) +
+  labs(
+    title = "Foliar Mercury concentration (Month-Only Axis)",
+    x = "Collection date (2024-2025 growing season)",
+    y = "Hg concentration (ppb)"       
+  ) +
+  theme_paper
+
+print(p_facet)
+ggsave("hg_by_orientation_facet_paper_monthonly.png", p_facet, width = 10.5, height = 7, dpi = 300)
+
+plot_single <- function(tree_name){
+  dat <- agg_df %>% filter(Tree == tree_name)
+  ggplot(dat, aes(Month_date, mean, colour = Leaf_Orientation, fill = Leaf_Orientation)) +
+    geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.18, colour = NA, show.legend = FALSE) +
+    geom_line(linewidth = 1) +
+    geom_point(size = 1.9) +
+    scale_colour_manual(values = cols_orient, name = "Leaf Orientation") +
+    scale_fill_manual(values    = cols_orient, name = "Leaf Orientation") +
+    scale_x_date(
+      breaks = x_breaks, date_labels = "%m-%d",
+      limits = range(x_breaks), expand = expansion(mult = c(0.01, 0.03))
+    ) +
+    labs(
+      title = paste0("Foliar Mercury concentration ", tree_name, " Tree "),
+      x = "Collection date (2024-2025 growing season)",
+      y = "Hg concentration (ppb)"
+    ) +
+    theme_paper
+}
+
+p_north <- plot_single("North")
+p_south <- plot_single("South")
+print(p_north); print(p_south)
+ggsave("hg_by_orientation_North_monthonly.png", p_north, width = 9, height = 5.5, dpi = 300)
+ggsave("hg_by_orientation_South_monthonly.png", p_south, width = 9, height = 5.5, dpi = 300)
+
+# x_breaks2 <- x_breaks[seq(1, length(x_breaks), by = 2)]
+# p_facet + scale_x_date(breaks = x_breaks2, date_labels = "%m-%d",
+#                        limits = range(x_breaks), expand = expansion(mult = c(0.01, 0.03)))
+
+```
+# 3.1.2 Geographic Variation of Mercury   
+# 0826 Netherland:hauge and horn 使用
+
+```{r}
+# ===== Packages =====
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(lubridate)
+  library(glue)
+})
+
+df_raw <- read_csv("ginkgo_hg.csv", show_col_types = FALSE) %>%
+  rename(
+    Sample = matches("^Sample$"),
+    Relative_Hg = matches("(?i)^Relative[_ ]?Hg$"),
+    Sample_of_growing_season = matches("(?i)^Sample[_ ]?of[_ ]?growing[_ ]?season$")
+  ) %>%
+  mutate(date = dmy(Sample_of_growing_season))
+
+# 每月均值 ±1SD
+daily <- df_raw %>%
+  mutate(month = floor_date(date, "month")) %>%
+  group_by(Sample, month) %>%
+  summarise(
+    mean_hg = mean(Relative_Hg, na.rm = TRUE),
+    sd_hg   = sd(Relative_Hg, na.rm = TRUE),
+    n       = dplyr::n(),
+    .groups = "drop"
+  ) %>%
+  mutate(ymin = mean_hg - sd_hg, ymax = mean_hg + sd_hg)
+
+# t：距各自最早观测日的天数
+df_fit <- df_raw %>%
+  arrange(Sample, date) %>%
+  group_by(Sample) %>%
+  mutate(t = as.numeric(date - min(date))) %>%
+  ungroup()
+
+dat_H <- filter(df_fit, Sample == "Hauge-Gb")
+dat_N <- filter(df_fit, Sample == "Horn-Gb")
+
+fit_H <- lm(Relative_Hg ~ t + I(t^2), data = dat_H)                       # Hauge-Gb: Quadratic
+fit_N <- lm(Relative_Hg ~ t + I(t^2) + I(t^3), data = dat_N)              # Horn-Gb: Cubic
+
+overall_p <- function(m){
+  f <- summary(m)$fstatistic
+  if (is.null(f)) return(NA_real_)
+  pf(f[1], f[2], f[3], lower.tail = FALSE)
+}
+
+fmt_formula <- function(m, degree){
+  cf <- coef(m)
+  b0 <- unname(cf[1]); b1 <- unname(cf["t"])
+  b2 <- if ("I(t^2)" %in% names(cf)) unname(cf["I(t^2)"]) else 0
+  b3 <- if ("I(t^3)" %in% names(cf)) unname(cf["I(t^3)"]) else 0
+  if (degree == 2) {
+    glue("y = {signif(b0,4)} + {signif(b1,4)}·t + {signif(b2,4)}·t²")
+  } else {
+    glue("y = {signif(b0,4)} + {signif(b1,4)}·t + {signif(b2,4)}·t² + {signif(b3,4)}·t³")
+  }
+}
+
+sH <- summary(fit_H); sN <- summary(fit_N)
+lab_H <- glue("{fmt_formula(fit_H,2)}\nR² = {round(sH$r.squared,4)}\nP = {formatC(overall_p(fit_H), format='g', digits=3)}")
+lab_N <- glue("{fmt_formula(fit_N,3)}\nR² = {round(sN$r.squared,4)}\nP = {formatC(overall_p(fit_N), format='g', digits=3)}")
+
+# 预测曲线（红线）
+pred_H <- {
+  newt <- tibble(t = seq(min(dat_H$t), max(dat_H$t), length.out = 500))
+  newt %>%
+    mutate(fit = predict(fit_H, newdata = newt),
+           Sample = "Hauge-Gb",
+           date = min(dat_H$date) + t)
+}
+pred_N <- {
+  newt <- tibble(t = seq(min(dat_N$t), max(dat_N$t), length.out = 500))
+  newt %>%
+    mutate(fit = predict(fit_N, newdata = newt),
+           Sample = "Horn-Gb",
+           date = min(dat_N$date) + t)
+}
+pred <- bind_rows(pred_H, pred_N)
+col_hauge <- "#6BAED6"   
+col_horn  <- "#FFE066"   
+col_model <- "#E24A33"   
+pt_alpha  <- 0.9
+
+# ===== 4) 顶部标签位置（不挡线）=====
+# 各地最高的（均值±SD）与预测值
+daily_top <- daily %>% group_by(Sample) %>% summarise(y_daily = max(ymax, na.rm = TRUE), .groups = "drop")
+pred_top  <- pred  %>% group_by(Sample) %>% summarise(y_pred  = max(fit,  na.rm = TRUE), .groups = "drop")
+y_top_by_site <- full_join(daily_top, pred_top, by = "Sample") %>%
+  mutate(y_top = pmax(y_daily, y_pred, na.rm = TRUE)) %>%
+  select(Sample, y_top)
+
+label_pos <- df_raw %>%
+  group_by(Sample) %>%
+  summarise(
+    x_min = min(date), x_max = max(date),
+    y_min = min(Relative_Hg, na.rm = TRUE),
+    y_max = max(Relative_Hg, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(y_top_by_site, by = "Sample") %>%
+  mutate(
+
+    y = y_top + 0.2 * (y_max - y_min),
+    x = x_min + 0.06 * as.numeric(x_max - x_min),
+    label = if_else(Sample == "Hauge-Gb", lab_H, lab_N)
+  )
+label_pos <- label_pos %>%
+  mutate(y = y + 0.16 * (max(df_raw$Relative_Hg) - min(df_raw$Relative_Hg)))
+
+p <- ggplot() +
+  # 每月均值 ± 1 SD
+  geom_errorbar(data = daily,
+                aes(x = month, ymin = ymin, ymax = ymax, color = Sample),
+                width = 10, linewidth = 0.8, alpha = 0.9) +
+  geom_line(data = daily,
+            aes(month, mean_hg, color = Sample, group = Sample),
+            linewidth = 1.1) +
+  geom_point(data = daily,
+             aes(month, mean_hg, color = Sample),
+             size = 2.4, alpha = pt_alpha) +
+
+  geom_line(data = pred,
+            aes(date, fit, group = Sample),
+            color = col_model, linewidth = 1.4, lineend = "round") +
+
+  # 顶部彩色公式框（不遮挡）
+  geom_label(
+    data = label_pos,
+    aes(x = x, y = y, label = label, fill = Sample),
+    hjust = 0, vjust = 1,
+    size = 4,                    # 清晰但不遮挡
+    fontface = "bold",
+    label.padding = unit(8, "pt"),
+    label.r = unit(6, "pt"),
+    label.size = 0,
+    color = "black",
+    alpha = 0.95,
+    show.legend = FALSE
+  ) +
+
+  facet_wrap(~ Sample, scales = "free_x") +
+  scale_color_manual(values = c("Hauge-Gb" = col_hauge, "Horn-Gb" = col_horn), name = NULL) +
+  scale_fill_manual(values  = c("Hauge-Gb" = scales::alpha(col_hauge, 0.9),
+                                "Horn-Gb"  = scales::alpha(col_horn,  0.9))) +
+
+  labs(
+    title = "Ginkgo Leaf Mercury Over Time in Netherland",
+    x = "Month", y = " Average Hg (ppb)"
+  ) +
+  # 月份：全称 + 旋转；两端留少量边距
+  scale_x_date(date_breaks = "1 month", date_labels = "%B",
+               expand = expansion(mult = c(0.03, 0.08))) +
+  scale_y_continuous(expand = expansion(mult = c(0.06, 0.35))) +
+
+  theme_minimal(base_size = 15) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey85"),
+    panel.grid.major.y = element_line(colour = "grey85"),
+    panel.background = element_rect(fill = "white", colour = NA),
+    plot.background  = element_rect(fill = "white", colour = NA),
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.margin = margin(16, 20, 16, 16),
+    strip.text = element_text(face = "bold")
+  ) +
+  coord_cartesian(clip = "off")
+
+ggsave("ginkgo_best_models_final.png", p, width = 10, height = 8, dpi = 320)
+
+cat("已保存：ginkgo_best_models_final.png\n")
+
+```
+
+# 3.1.2: 论文使用Ireland seasonality 
+
+```{r}
+# ===== Packages =====
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(lubridate)
+  library(glue)
+  library(purrr)
+})
+
+df_raw <- read_csv("Gb_seasonality.csv", show_col_types = FALSE) %>%
+  rename(
+    Species = matches("(?i)^Species$"),
+    Month   = matches("(?i)^Month$"),
+    Tree    = matches("(?i)^Tree$"),
+    Leaf_Orientation = matches("(?i)^Leaf[_ ]?Orientation$"),
+    leaf_parts       = matches("(?i)^leaf[_ ]?parts$"),
+    Average_Hg       = matches("(?i)^Average[_ ]?Hg$")
+  ) %>%
+  mutate(date = dmy(Month)) %>%
+  filter(!is.na(date)) %>%
+  arrange(Tree, date)
+
+# 固定月份顺序：April → November
+month_levels <- c("April","May","June","July","August","September","October","November")
+
+daily <- df_raw %>%
+  mutate(month = floor_date(date, "month"),
+         month_f = factor(format(month, "%B"), levels = month_levels)) %>%
+  group_by(Tree, month, month_f) %>%
+  summarise(
+    mean_hg = mean(Average_Hg, na.rm = TRUE),
+    sd_hg   = sd(Average_Hg,   na.rm = TRUE),
+    n       = dplyr::n(),
+    .groups = "drop"
+  ) %>%
+  mutate(ymin = mean_hg - sd_hg, ymax = mean_hg + sd_hg)
+
+df_fit <- df_raw %>%
+  group_by(Tree) %>%
+  mutate(t = as.numeric(date - min(date))) %>%
+  ungroup()
+
+overall_p <- function(m){
+  f <- summary(m)$fstatistic
+  if (is.null(f)) return(NA_real_)
+  pf(f[1], f[2], f[3], lower.tail = FALSE)
+}
+
+fit_and_score <- function(dat) {
+  mods <- list(
+    linear    = lm(Average_Hg ~ t, data = dat),
+    quadratic = lm(Average_Hg ~ t + I(t^2), data = dat),
+    cubic     = lm(Average_Hg ~ t + I(t^2) + I(t^3), data = dat)
+  )
+  tibble(
+    model = names(mods),
+    fit   = mods,
+    AIC   = map_dbl(mods, AIC),
+    R2    = map_dbl(mods, ~summary(.x)$r.squared),
+    P     = map_dbl(mods, overall_p)
+  ) %>%
+    { if (any(.$P < 0.05, na.rm = TRUE)) filter(., P < 0.05) else . } %>%
+    arrange(AIC, desc(R2)) %>%
+    slice(1)
+}
+
+best_tbl <- df_fit %>%
+  group_by(Tree) %>%
+  group_modify(~{
+    bs <- fit_and_score(.x)
+    tibble(Tree = unique(.x$Tree), model = bs$model, fit_obj = bs$fit, AIC = bs$AIC, R2 = bs$R2, P = bs$P)
+  }) %>%
+  ungroup()
+
+fmt_formula <- function(m){
+  cf <- coef(m)
+  b0 <- signif(unname(cf[1]), 4)
+  b1 <- if ("t" %in% names(cf))        signif(unname(cf["t"]), 4) else NA
+  b2 <- if ("I(t^2)" %in% names(cf))   signif(unname(cf["I(t^2)"]), 4) else NA
+  b3 <- if ("I(t^3)" %in% names(cf))   signif(unname(cf["I(t^3)"]), 4) else NA
+  parts <- c(
+    glue("{b0}"),
+    if (!is.na(b1)) glue("{ifelse(b1>=0,'+','')} {b1}·t"),
+    if (!is.na(b2)) glue("{ifelse(b2>=0,'+','')} {b2}·t²"),
+    if (!is.na(b3)) glue("{ifelse(b3>=0,'+','')} {b3}·t³")
+  )
+  glue("y = {paste(parts, collapse = ' ')}")
+}
+
+labels_df <- best_tbl %>%
+  mutate(
+    label = map_chr(fit_obj, ~{
+      sm <- summary(.x)
+      glue("{fmt_formula(.x)}\nR² = {round(sm$r.squared, 4)}\nP = {formatC(overall_p(.x), format='g', digits=3)}")
+    })
+  ) %>%
+  select(Tree, model, fit_obj, label)
+
+mk_pred <- function(dat, fit){
+  newt <- tibble(t = seq(min(dat$t), max(dat$t), length.out = 800)) %>%
+    mutate(date = min(dat$date) + t,
+           month_f = factor(format(date, "%B"), levels = month_levels),
+           Tree = dat$Tree[1],
+           fit = predict(fit, newdata = cur_data()))
+  newt %>%
+    group_by(Tree, month_f) %>%
+    summarise(fit = mean(fit, na.rm = TRUE), .groups = "drop")
+}
+
+pred <- map_dfr(unique(df_fit$Tree), function(tr){
+  dat  <- df_fit %>% filter(Tree == tr)
+  fobj <- labels_df %>% filter(Tree == tr) %>% pull(fit_obj) %>% .[[1]]
+  mk_pred(dat, fobj)
+})
+
+daily_top <- daily %>% group_by(Tree) %>% summarise(y_daily = max(ymax, na.rm = TRUE), .groups = "drop")
+pred_top  <- pred  %>% group_by(Tree) %>% summarise(y_pred  = max(fit,  na.rm = TRUE), .groups = "drop")
+y_top_by_tree <- full_join(daily_top, pred_top, by = "Tree") %>%
+  mutate(y_top = pmax(y_daily, y_pred, na.rm = TRUE)) %>%
+  select(Tree, y_top)
+
+range_by_tree <- df_raw %>%
+  group_by(Tree) %>%
+  summarise(y_min = min(Average_Hg, na.rm = TRUE),
+            y_max = max(Average_Hg, na.rm = TRUE),
+            .groups = "drop")
+
+label_pos <- labels_df %>%
+  left_join(y_top_by_tree, by = "Tree") %>%
+  left_join(range_by_tree, by = "Tree") %>%
+  mutate(
+    y = y_top + 0.18 * (y_max - y_min),
+    month_f = factor("April", levels = month_levels)
+  )
+
+label_pos <- label_pos %>%
+  mutate(y = y - 0.1 * (max(df_raw$Relative_Hg) - min(df_raw$Relative_Hg)))
+
+col_north <- "#6BAED6"   # 浅蓝（North）
+col_south <- "#FFE066"   # 明亮浅黄（South）
+col_model <- "#E24A33"   # 红色模型线
+
+p <- ggplot() +
+  # 月度均值 ± 1 SD
+  geom_errorbar(data = daily,
+                aes(x = month_f, ymin = ymin, ymax = ymax, color = Tree),
+                width = 0.2, linewidth = 0.8, alpha = 0.9) +
+  geom_line(data = daily,
+            aes(month_f, mean_hg, color = Tree, group = Tree),
+            linewidth = 1.1) +
+  geom_point(data = daily,
+             aes(month_f, mean_hg, color = Tree),
+             size = 2.4, alpha = 0.9) +
+
+  # 最佳模型曲线（红）
+  geom_line(data = pred,
+            aes(month_f, fit, group = Tree),
+            color = col_model, linewidth = 1.4, lineend = "round") +
+
+  # 顶部标签（浅蓝/浅黄）
+  geom_label(
+    data = label_pos,
+    aes(x = month_f, y = y, label = label, fill = Tree),
+    hjust = 0, vjust = 1,
+    size = 4, fontface = "bold",
+    label.padding = unit(8, "pt"),
+    label.r = unit(6, "pt"),
+    label.size = 0,
+    color = "black",
+    alpha = 0.9,
+    show.legend = FALSE
+  ) +
+
+  facet_wrap(~ Tree, scales = "free_x") +
+  scale_color_manual(values = c("North" = col_north, "South" = col_south), name = NULL) +
+  scale_fill_manual(values  = c("North" = scales::alpha(col_north, 0.85),
+                                "South" = scales::alpha(col_south,  0.85))) +
+
+  labs(
+    title = "Ginkgo Leaf Mercury Seasonality by Tree - Ireland",
+    subtitle = " ",
+    x = "Month", y = "Average Hg (ppb)"
+  ) +
+  scale_x_discrete(limits = month_levels, drop = FALSE) +
+  scale_y_continuous(expand = expansion(mult = c(0.06, 0.35))) +
+
+  theme_minimal(base_size = 15) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey85"),
+    panel.grid.major.y = element_line(colour = "grey85"),
+    panel.background = element_rect(fill = "white", colour = NA),
+    plot.background  = element_rect(fill = "white", colour = NA),
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.margin = margin(16, 20, 16, 16),
+    strip.text = element_text(face = "bold")
+  ) +
+  coord_cartesian(clip = "off")
+
+ggsave("gb_seasonality_models.png", p, width = 11, height = 8.5, dpi = 320)
+
+best_tbl %>%
+  transmute(
+    Tree,
+    Best_Model = model,
+    AIC = round(AIC, 2),
+    R2  = round(R2, 4),
+    P   = formatC(P, format = "g", digits = 4)
+  ) %>%
+  print(row.names = FALSE)
+
+```
+
+# 3.1.3 Environmental Drivers of Seasonal Mercury Uptake. 
+```{r}
+# 已使用-linear regression 论文
+```{r}
+# ===== Packages =====
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(glue)
+  library(purrr)
+  library(tidyr)
+})
+
+# ===== 1) 读取数据 =====
+env <- read_csv("environment_data.csv", show_col_types = FALSE) %>%
+  rename(
+    Month            = matches("(?i)^month$"),
+    North_tree_Hg    = matches("(?i)^north[_ ]?tree[_ ]?hg$"),
+    South_tree_Hg    = matches("(?i)^south[_ ]?tree[_ ]?hg$"),
+    total_rainfall   = matches("(?i)^total[_ ]?rainfall$"),
+    mean_temperature = matches("(?i)^mean[_ ]?temperature$"),
+    solar_radiation  = matches("(?i)^solar[_ ]?radiation$"),
+    evaporation      = matches("(?i)^evaporation$")
+  ) %>%
+  mutate(
+    Month = str_to_title(Month),
+    Month = factor(Month, levels = c("April","May","June","July","August","September","October","November"))
+  )
+
+# 转成长表
+df_long <- env %>%
+  pivot_longer(c(North_tree_Hg, South_tree_Hg),
+               names_to = "Tree", values_to = "Hg") %>%
+  mutate(Tree = recode(Tree,
+                       "North_tree_Hg" = "North",
+                       "South_tree_Hg" = "South"))
+
+# ===== 2) 提取总体 p 值函数 =====
+overall_p <- function(m){
+  f <- summary(m)$fstatistic
+  if (is.null(f)) return(NA_real_)
+  pf(f[1], f[2], f[3], lower.tail = FALSE)
+}
+
+make_one_plot <- function(var, xlab, file){
+  dat <- df_long %>%
+    select(Month, Tree, Hg, all_of(var)) %>%
+    drop_na(Hg, all_of(var)) %>%
+    rename(X = all_of(var))
+  
+  fits <- dat %>%
+    nest(.by = Tree) %>%
+    mutate(
+      fit_obj = map(data, ~ lm(Hg ~ X, data = .x)),
+      label   = map_chr(fit_obj, ~ {
+        sm <- summary(.x)
+        b  <- coef(.x)
+        b0 <- signif(b[1], 4); b1 <- signif(b[2], 4)
+        glue("y = {b0} {ifelse(b1>=0,'+','')} {b1}·x\nR² = {round(sm$r.squared,4)}\nP = {formatC(overall_p(.x), format='g', digits=4)}")
+      })
+    ) %>% select(-data)
+  
+  pos <- dat %>%
+    group_by(Tree) %>%
+    summarise(ymax = max(Hg, na.rm = TRUE), ymin = min(Hg, na.rm = TRUE), .groups = "drop") %>%
+    left_join(fits, by = "Tree") %>%
+    mutate(
+      y = ymax + 0.25 * (ymax - ymin),
+      x = map_dbl(Tree, ~ {
+        rng <- range(dat$X[dat$Tree == .x], na.rm = TRUE)
+        rng[1] + 0.05 * diff(rng)
+      })
+    )
+  
+  col_north <- "#6BAED6"
+  col_south <- "#FFE066"
+  col_model <- "#E24A33"
+  
+  p <- ggplot(dat, aes(X, Hg, color = Tree)) +
+    geom_point(size = 2.8, alpha = 0.95) +
+    geom_text(aes(label = match(Month, month.name)), 
+              vjust = -0.8, size = 4, fontface = "bold", show.legend = FALSE) +
+    geom_smooth(method = "lm", se = FALSE, color = col_model, linewidth = 1.4, aes(group = Tree), formula = y ~ x) +
+    geom_label(data = pos,
+               aes(x = x, y = y, label = label, fill = Tree),
+               hjust = 0, vjust = 1, size = 4, fontface = "bold",
+               label.padding = unit(8, "pt"), label.r = unit(6, "pt"),
+               label.size = 0, color = "black", alpha = 0.9, show.legend = FALSE) +
+    facet_wrap(~ Tree, scales = "free") +
+    scale_color_manual(values = c("North" = col_north, "South" = col_south), name = NULL) +
+    scale_fill_manual(values  = c("North" = scales::alpha(col_north, 0.85),
+                                  "South" = scales::alpha(col_south, 0.85))) +
+    labs(
+      title = glue("Linear regression of Ginkgo biloba Foliar Hg"),
+      x = xlab, y = "Average Hg (ppb)"
+    ) +
+    theme_minimal(base_size = 15) +
+    theme(
+      legend.position = "right",
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(colour = "grey85"),
+      panel.background = element_rect(fill = "white", colour = NA),
+      plot.background  = element_rect(fill = "white", colour = NA),
+      plot.margin = margin(16, 20, 16, 16),
+      strip.text = element_text(face = "bold")
+    )
+  
+  ggsave(file, p, width = 10.5, height = 8.0, dpi = 320)
+  message("Saved: ", file)
+}
+
+make_one_plot("total_rainfall",   "Total rainfall (mm)",    "gb_lm_rain.png")
+make_one_plot("mean_temperature", "Mean temperature (°C)",  "gb_lm_temp.png")
+make_one_plot("solar_radiation",  "Solar radiation",        "gb_lm_solar.png")
+make_one_plot("evaporation",      "Evaporation (mm)",       "gb_lm_evap.png")
+
+```
+
+# 3.2.1: 论文-tcbg 月份对比：已使用
+
+```{r}
+pkgs <- c("tidyverse","lubridate","janitor","stringr")
+new <- setdiff(pkgs, rownames(installed.packages()))
+if(length(new)) install.packages(new, repos = "https://cloud.r-project.org")
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+dir.create("output", showWarnings = FALSE)
+
+
+df <- read.csv("leaf_hg_data.csv", check.names = FALSE) |> as_tibble()
+# 统一小写+下划线，避免大小写问题
+df <- df |> janitor::clean_names()
+
+need <- c("relative_hg","date","species")
+miss <- setdiff(need, names(df))
+if(length(miss)) stop("CSV 缺少列：", paste(miss, collapse = ", "))
+
+df <- df |>
+  mutate(
+    date  = lubridate::dmy(date),
+    month = factor(format(date, "%B"), levels = c("April","June"))
+  )
+
+df <- df |>
+  mutate(species = stringr::str_squish(species))
+
+avg_hg <- df |>
+  group_by(species, month) |>
+  summarise(
+    n        = n(),
+    mean_hg  = mean(relative_hg, na.rm = TRUE),
+    sd_hg    = sd(relative_hg, na.rm = TRUE),
+    se_hg    = sd_hg / sqrt(n),
+    ci95     = qt(0.975, df = pmax(n-1, 1)) * se_hg,
+    .groups  = "drop"
+  )
+
+order_tbl <- avg_hg |>
+  group_by(species) |>
+  summarise(overall_mean = mean(mean_hg, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(overall_mean))
+
+short_species <- function(x){
+  x <- str_squish(x)
+  x <- str_replace_all(x, "var\\.", "v.")
+  x <- str_replace_all(x, "Metasequoia glyptostroboides", "Metasequoia glypto.")
+  x <- str_replace_all(x, "Betula utilis v\\. jacquemontii|Betula utilis var\\. jacquemontii",
+                       "Betula utilis v. jacq.")
+  x <- str_replace_all(x, "Davidia involucrata var\\. vilmoriniana",
+                       "Davidia inv. v. vilmor.")
+  x <- ifelse(nchar(x) > 18, str_replace(x, " ", "\n"), x)
+  x
+}
+
+avg_hg <- avg_hg |>
+  mutate(
+    species_label = short_species(species),
+    species_f     = factor(species_label,
+                           levels = short_species(order_tbl$species))
+  )
+
+p1 <- ggplot(avg_hg, aes(x = species_f, y = mean_hg, fill = month)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.65) +
+  geom_errorbar(
+    aes(ymin = mean_hg - ci95, ymax = mean_hg + ci95),
+    position = position_dodge(width = 0.75),
+    width = 0.25, linewidth = 0.5
+  ) +
+  labs(
+    title = "Average foliar mercury by species (mean ± 95% CI)",
+    subtitle = "TCBG — comparison between April and June",
+    x = NULL, y = "Relative Hg (mean)"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  scale_fill_manual(values = c("April" = "#1f77b4", "June" = "#ff7f0e")) +
+  theme_minimal(base_size = 20) +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.text.x   = element_text(angle = 45, hjust = 1, vjust = 1, size = 16),
+    legend.position = "top",
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("output/species_monthly_Hg_mean_CI.png", p1, width = 16, height = 8, dpi = 300)
+
+chg <- avg_hg |>
+  select(species, month, mean_hg) |>
+  pivot_wider(names_from = month, values_from = mean_hg) |>
+  mutate(
+    pct_change = (`June` - `April`) / `April` * 100
+  ) |>
+  arrange(desc(pct_change)) |>
+  mutate(species_f = factor(short_species(species),
+                            levels = short_species(species)))
+
+p2 <- ggplot(chg, aes(x = species_f, y = pct_change)) +
+  geom_col(width = 0.65) +
+  geom_hline(yintercept = 0, linewidth = 0.4) +
+  labs(
+    title = "Percent change from April to June by species",
+    x = NULL, y = "Change (%)"
+  ) +
+  theme_minimal(base_size = 20) +
+  theme(
+    plot.title  = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 16)
+  )
+
+ggsave("output/species_pct_change_Apr_to_Jun.png", p2, width = 16, height = 8, dpi = 300)
+
+top5  <- order_tbl$species[1:min(5, nrow(order_tbl))]
+bot5  <- order_tbl$species[max(1, nrow(order_tbl)-4):nrow(order_tbl)]
+
+rise5 <- chg$species[1:min(5, nrow(chg))]
+fall5 <- chg$species[max(1, nrow(chg)-4):nrow(chg)]
+
+cat("\n==== Summary ====\n")
+cat("Top 5 overall mean Relative Hg:\n  -", paste(top5, collapse = "\n  - "), "\n\n")
+cat("Bottom 5 overall mean Relative Hg:\n  -", paste(bot5, collapse = "\n  - "), "\n\n")
+cat("Largest percent increases (Apr -> Jun):\n  -", paste(rise5, collapse = "\n  - "), "\n\n")
+cat("Smallest percent increases (or decreases):\n  -", paste(fall5, collapse = "\n  - "), "\n")
+cat("\nOutputs saved to ./output/\n")
+
+
+```
+
+#论文使用-tcbg vs nbg
+
+```{r}
+pkgs <- c("tidyverse","janitor","stringr","broom")
+new <- setdiff(pkgs, rownames(installed.packages()))
+if (length(new)) install.packages(new, repos = "https://cloud.r-project.org")
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+dir.create("output", showWarnings = FALSE)
+
+dat <- readr::read_csv("your_data.csv", show_col_types = FALSE) |>
+  janitor::clean_names()
+
+need <- c("species","place","relative_hg")
+miss <- setdiff(need, names(dat))
+if (length(miss)) stop("CSV 缺少列：", paste(miss, collapse = ", "))
+
+dat <- dat |>
+  mutate(
+    species = str_squish(as.character(species)),
+    place   = factor(place, levels = c("NBG","TCBG")),  # 固定顺序：NBG 在左，TCBG 在右
+    relative_hg = as.numeric(relative_hg)
+  )
+
+avg <- dat |>
+  group_by(species, place) |>
+  summarise(
+    n = n(),
+    mean_hg = mean(relative_hg, na.rm = TRUE),
+    sd_hg   = sd(relative_hg, na.rm = TRUE),
+    se_hg   = sd_hg/sqrt(n),
+    ci95    = qt(0.975, df = pmax(n-1,1)) * se_hg,
+    .groups = "drop"
+  )
+
+order_tbl <- avg |>
+  group_by(species) |>
+  summarise(overall_mean = mean(mean_hg, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(overall_mean))
+
+short_species <- function(x){
+  x <- str_squish(x)
+  x <- str_replace_all(x, "var\\.", "v.")
+  x <- str_replace_all(x, "Betula utilis var\\. jacquemontii", "Betula utilis v. jacq.")
+  x <- str_replace_all(x, "Davidia involucrata var\\. vilmoriniana", "Davidia inv. v. vilmor.")
+  x <- str_replace_all(x, "Metasequoia glyptostroboides", "Metasequoia glypto.")
+  ifelse(nchar(x) > 18, str_replace(x, " ", "\n"), x)
+}
+
+avg <- avg |>
+  mutate(
+    species_lab = short_species(species),
+    species_f   = factor(species_lab, levels = short_species(order_tbl$species))
+  )
+
+readr::write_csv(avg, "output/avg_by_species_place.csv")
+
+p1 <- ggplot(avg, aes(x = species_f, y = mean_hg, fill = place)) +
+  geom_col(position = position_dodge(width = 0.72), width = 0.62) +
+  geom_errorbar(
+    aes(ymin = mean_hg - ci95, ymax = mean_hg + ci95),
+    position = position_dodge(width = 0.72), width = 0.2, linewidth = 0.5
+  ) +
+  coord_flip() +
+  scale_fill_manual(values = c("NBG" = "#1f77b4", "TCBG" = "#ff7f0e")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Average foliar mercury by species and place (mean ± 95% CI)",
+       x = NULL, y = "Relative Hg (mean)", fill = "Place") +
+  theme_minimal(base_size = 16) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("output/compare_place_mean_CI.png", p1, width = 12, height = 9, dpi = 300)
+
+wide <- avg |>
+  select(species, place, mean_hg) |>
+  pivot_wider(names_from = place, values_from = mean_hg)
+
+tt_res <- dat |>
+  group_by(species) |>
+  group_modify(~{
+    d <- .x
+    if (all(c("NBG","TCBG") %in% d$place) &&
+        min(table(d$place)) >= 2) {
+      broom::tidy(t.test(relative_hg ~ place, data = d)) |>
+        mutate(ok = TRUE)
+    } else {
+      tibble(statistic = NA_real_, p.value = NA_real_, parameter = NA_real_,
+             conf.low = NA_real_, conf.high = NA_real_, method = "insufficient",
+             ok = FALSE)
+    }
+  }) |>
+  ungroup() |>
+  mutate(p_adj = p.adjust(p.value, method = "BH"))
+
+delta <- wide |>
+  mutate(
+    diff = TCBG - NBG,
+    pct  = (TCBG - NBG) / NBG * 100
+  ) |>
+  left_join(tt_res |> select(species, p.value, p_adj, ok), by = "species") |>
+  arrange(desc(diff)) |>
+  mutate(
+    species_f = factor(short_species(species),
+                       levels = short_species(species)[order(-diff)]),
+    sig = case_when(
+      is.na(p_adj)           ~ "",
+      p_adj < 0.001          ~ "***",
+      p_adj < 0.01           ~ "**",
+      p_adj < 0.05           ~ "*",
+      TRUE                   ~ ""
+    )
+  )
+
+readr::write_csv(delta, "output/delta_TCBG_minus_NBG.csv")
+readr::write_csv(tt_res, "output/ttest_species_place.csv")
+
+p2 <- ggplot(delta, aes(x = species_f, y = diff)) +
+  geom_col(width = 0.6, fill = "#7f7f7f") +
+  geom_hline(yintercept = 0, linewidth = 0.5) +
+  geom_text(aes(label = sig),
+            nudge_y = 0.02*max(abs(delta$diff), na.rm = TRUE),
+            size = 7) +
+  coord_flip() +
+  labs(title = "Difference in Relative Hg (TCBG − NBG) by species",
+       subtitle = "Stars denote FDR-adjusted significance (* p<0.05, ** p<0.01, *** p<0.001)",
+       x = NULL, y = "Mean difference") +
+  theme_minimal(base_size = 16.5) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+ggsave("output/diff_TCBG_minus_NBG.png", p2, width = 10, height = 9, dpi = 300)
+
+overall <- dat |>
+  group_by(place) |>
+  summarise(overall_mean = mean(relative_hg, na.rm = TRUE), .groups = "drop")
+
+wins <- delta |>
+  mutate(winner = case_when(
+    is.na(diff) ~ "missing",
+    diff > 0    ~ "TCBG higher",
+    diff < 0    ~ "NBG higher",
+    TRUE        ~ "tie"
+  )) |>
+  count(winner)
+
+cat("\n===== Summary =====\n")
+print(overall)
+cat("\nCounts of species where TCBG > NBG / NBG > TCBG / tie / missing:\n")
+print(wins)
+cat("\nTop 5 with highest TCBG−NBG:\n")
+print(delta |> slice_max(diff, n = 5) |> select(species, diff, pct, p_adj))
+cat("\nTop 5 with lowest (NBG advantage):\n")
+print(delta |> slice_min(diff, n = 5) |> select(species, diff, pct, p_adj))
+cat("\nFiles saved in ./output/\n")
+
+```
+
+
+# 3.2.2 stomtal conductance 
+```{r}
+# 论文已使用代码
+```{r}
+# 必要包
+library(tidyverse)
+library(ggrepel)
+library(viridis)
+
+# 读入并清理列名（将空格换成下划线，便于引用）
+gs_data <- read_csv("gs_species.csv")
+names(gs_data) <- gsub(" ", "_", names(gs_data))
+
+# 类型转换与排序
+gs_data <- gs_data %>%
+  mutate(
+    Mean_gs = as.numeric(Mean_gs),
+    Mean_Relative_Hg = as.numeric(Mean_Relative_Hg),
+    Place = factor(Place, levels = c("TCBG","NBG")),
+    Species = factor(Species, levels = sort(unique(Species)))
+  ) %>%
+  filter(!is.na(Mean_gs), !is.na(Mean_Relative_Hg))
+x_rng <- range(gs_data$Mean_gs, na.rm = TRUE)
+y_rng <- range(gs_data$Mean_Relative_Hg, na.rm = TRUE)
+pal <- viridis(n = nlevels(gs_data$Species), option = "Cividis", end = 0.95)
+
+set.seed(123)  # 标签位置可复现
+
+## ---- 图 1：TCBG ----
+gs_tcbg <- gs_data %>% filter(Place == "TCBG")
+
+p_tcbg <- ggplot(gs_tcbg, aes(x = Mean_gs, y = Mean_Relative_Hg, color = Species)) +
+  geom_point(size = 2.6, alpha = 0.95) +
+  ggrepel::geom_text_repel(
+    aes(label = Species),
+    size = 2.6, max.overlaps = Inf, box.padding = 0.35, point.padding = 0.25,
+    segment.color = "grey70", segment.size = 0.2, show.legend = FALSE
+  ) +
+  scale_color_manual(values = pal) +
+  scale_x_continuous("Mean stomatal conductance (gs)",
+                     limits = x_rng, expand = expansion(mult = 0.02),
+                     breaks = scales::pretty_breaks(6)) +
+  scale_y_continuous("Mean relative foliar Hg",
+                     limits = y_rng, expand = expansion(mult = 0.02),
+                     breaks = scales::pretty_breaks(6)) +
+  labs(title = "Stomatal conductance vs. relative foliar Hg — TCBG") +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(size = 0.25, colour = "grey85"),
+    axis.title = element_text(face = "bold"),
+    axis.text  = element_text(colour = "grey15"),
+    plot.title = element_text(face = "bold", hjust = 0),
+    plot.margin = margin(6, 10, 6, 6)
+  )
+
+p_tcbg
+
+## ---- 图 2：NBG ----
+gs_nbg <- gs_data %>% filter(Place == "NBG")
+
+p_nbg <- ggplot(gs_nbg, aes(x = Mean_gs, y = Mean_Relative_Hg, color = Species)) +
+  geom_point(size = 2.6, alpha = 0.95) +
+  ggrepel::geom_text_repel(
+    aes(label = Species),
+    size = 2.6, max.overlaps = Inf, box.padding = 0.35, point.padding = 0.25,
+    segment.color = "grey70", segment.size = 0.2, show.legend = FALSE
+  ) +
+  scale_color_manual(values = pal) +
+  scale_x_continuous("Mean stomatal conductance (gs)",
+                     limits = x_rng, expand = expansion(mult = 0.02),
+                     breaks = scales::pretty_breaks(6)) +
+  scale_y_continuous("Mean relative foliar Hg",
+                     limits = y_rng, expand = expansion(mult = 0.02),
+                     breaks = scales::pretty_breaks(6)) +
+  labs(title = "Stomatal conductance vs. relative foliar Hg — NBG") +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(size = 0.25, colour = "grey85"),
+    axis.title = element_text(face = "bold"),
+    axis.text  = element_text(colour = "grey15"),
+    plot.title = element_text(face = "bold", hjust = 0),
+    plot.margin = margin(6, 10, 6, 6)
+  )
+
+p_nbg
+
+ggsave("Fig_gs_vs_relHg_TCBG.pdf", p_tcbg, width = 4.2, height = 3.6, device = cairo_pdf)
+ggsave("Fig_gs_vs_relHg_TCBG.png", p_tcbg, width = 4.2, height = 3.6, dpi = 600)
+
+ggsave("Fig_gs_vs_relHg_NBG.pdf", p_nbg, width = 4.2, height = 3.6, device = cairo_pdf)
+ggsave("Fig_gs_vs_relHg_NBG.png", p_nbg, width = 4.2, height = 3.6, dpi = 600)
+
+```
+```
+
+
