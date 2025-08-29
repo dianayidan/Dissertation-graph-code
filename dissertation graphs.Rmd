@@ -5,7 +5,7 @@ date: "2025-08-10"
 output: html_document
 ---
 
-# Collection date (2024-2025 growing season) -leaf part : 3.1.1.1used 0826
+# 3.1.1.1 graph -leaf part :Collection date (2024-2025 growing season) 
 
 ```{r}
 
@@ -127,16 +127,16 @@ print(p_facet)
 print(p_north)
 print(p_south)
 
-# ----- 6) Save (可选) -----
 # ggsave("Hg_mean_sd_facet_monthonly.png", p_facet, width = 11, height = 7, dpi = 300)
 # ggsave("Hg_mean_sd_north_monthonly.png", p_north, width = 8, height = 5.5, dpi = 300)
 # ggsave("Hg_mean_sd_south_monthonly.png", p_south, width = 8, height = 5.5, dpi = 300)
 
 ```
 
+---
 
+#3.1.1.2 hg ratio 
 
-#3.1.1.2 hg ratio 0826
 ```{r}
 
 library(tidyverse)
@@ -158,7 +158,6 @@ df <- df %>%
     Leaf_Orientation = factor(Leaf_Orientation, levels = c("North","South"))
   )
 
-# 保证同一天×同树×同朝向下 P1/P2/P3 配对 ====
 wide <- df %>%
   filter(leaf_parts %in% c("P1","P2","P3")) %>%
   group_by(Month_date, Tree, Leaf_Orientation, leaf_parts) %>%
@@ -193,7 +192,6 @@ ratio_sum <- ratio_long %>%
     type = factor(type, levels = c("P1/P2","P2/P3","P1/P3"))
   )
 
-# CSV 实际出现过的“周”日期（忽略年份，仅按月-日顺序）====  
 x_breaks <- ratio_sum %>%
   distinct(Month_date) %>%
   arrange(Month_date) %>%
@@ -213,14 +211,12 @@ theme_paper <- theme_minimal(base_size = 13) +
     legend.title = element_text(face = "bold"),
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
-
-# 绘图：North / South 分面 + 均值折线 + SD 阴影 
 p <- ggplot(ratio_sum, aes(x = Month_date, y = mean, colour = type, fill = type)) +
   geom_hline(yintercept = 1, linetype = 2, linewidth = 0.6, alpha = 0.6) +
   geom_ribbon(aes(ymin = ymin, ymax = ymax), alpha = 0.16, colour = NA, show.legend = FALSE) +
   geom_line(linewidth = 1) +
   geom_point(size = 1.6) +
-  facet_grid(Tree ~ ., scales = "fixed") +   # 若需要各自独立纵轴，改为 "free_y"
+  facet_grid(Tree ~ ., scales = "fixed") +   
   scale_colour_manual(values = cols, name = "Hg Ratio") +
   scale_fill_manual(values = cols,   name = "Hg Ratio") +
   scale_x_date(
@@ -246,8 +242,8 @@ ggsave("Hg_ratio_North_vs_South.png", p, width = 10.5, height = 6, dpi = 300)
 
 ```
 
-
-# 0826 leaf orientation
+---
+ # leaf orientation
 ```{r}
 library(tidyverse)
 library(lubridate)
@@ -452,8 +448,6 @@ col_horn  <- "#FFE066"
 col_model <- "#E24A33"   
 pt_alpha  <- 0.9
 
-# ===== 4) 顶部标签位置（不挡线）=====
-# 各地最高的（均值±SD）与预测值
 daily_top <- daily %>% group_by(Sample) %>% summarise(y_daily = max(ymax, na.rm = TRUE), .groups = "drop")
 pred_top  <- pred  %>% group_by(Sample) %>% summarise(y_pred  = max(fit,  na.rm = TRUE), .groups = "drop")
 y_top_by_site <- full_join(daily_top, pred_top, by = "Sample") %>%
@@ -494,12 +488,11 @@ p <- ggplot() +
             aes(date, fit, group = Sample),
             color = col_model, linewidth = 1.4, lineend = "round") +
 
-  # 顶部彩色公式框（不遮挡）
   geom_label(
     data = label_pos,
     aes(x = x, y = y, label = label, fill = Sample),
     hjust = 0, vjust = 1,
-    size = 4,                    # 清晰但不遮挡
+    size = 4,                   
     fontface = "bold",
     label.padding = unit(8, "pt"),
     label.r = unit(6, "pt"),
@@ -760,8 +753,7 @@ best_tbl %>%
 ```
 
 # 3.1.3 Environmental Drivers of Seasonal Mercury Uptake. 
-```{r}
-# 已使用-linear regression 论文
+
 ```{r}
 # ===== Packages =====
 suppressPackageStartupMessages({
@@ -770,8 +762,6 @@ suppressPackageStartupMessages({
   library(purrr)
   library(tidyr)
 })
-
-# ===== 1) 读取数据 =====
 env <- read_csv("environment_data.csv", show_col_types = FALSE) %>%
   rename(
     Month            = matches("(?i)^month$"),
@@ -794,8 +784,6 @@ df_long <- env %>%
   mutate(Tree = recode(Tree,
                        "North_tree_Hg" = "North",
                        "South_tree_Hg" = "South"))
-
-# ===== 2) 提取总体 p 值函数 =====
 overall_p <- function(m){
   f <- summary(m)$fstatistic
   if (is.null(f)) return(NA_real_)
@@ -1170,8 +1158,7 @@ cat("\nFiles saved in ./output/\n")
 
 
 # 3.2.2 stomtal conductance 
-```{r}
-# 论文已使用代码
+
 ```{r}
 # 必要包
 library(tidyverse)
@@ -1266,6 +1253,6 @@ ggsave("Fig_gs_vs_relHg_NBG.pdf", p_nbg, width = 4.2, height = 3.6, device = cai
 ggsave("Fig_gs_vs_relHg_NBG.png", p_nbg, width = 4.2, height = 3.6, dpi = 600)
 
 ```
-```
+
 
 
